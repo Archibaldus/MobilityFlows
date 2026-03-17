@@ -100,24 +100,43 @@
       { label: "Specialty", ids: ["hip_focus", "desk_worker", "runner", "thoracic_focus", "morning", "wind_down", "pre_workout"] },
     ];
 
-    // ========== Audio ==========
+    // ========== Audio (iOS Safari compatible) ==========
+    // Singleton AudioContext — must be unlocked during a user gesture (tap)
+    const _audio = { ctx: null, unlocked: false };
+
+    function unlockAudio() {
+      try {
+        if (!_audio.ctx) {
+          _audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = _audio.ctx;
+        if (ctx.state === "suspended") ctx.resume();
+        if (!_audio.unlocked) {
+          // iOS requires playing a silent buffer during a user gesture to fully unlock
+          const buf = ctx.createBuffer(1, 1, 22050);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start(0);
+          _audio.unlocked = true;
+        }
+      } catch (e) {}
+    }
+
     function useAudio() {
-      const ctxRef = useRef(null);
-      const getCtx = useCallback(() => {
-        if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-        if (ctxRef.current.state === "suspended") ctxRef.current.resume();
-        return ctxRef.current;
-      }, []);
       const beep = useCallback((freq = 660, dur = 0.12, vol = 0.3) => {
         try {
-          const ctx = getCtx(), osc = ctx.createOscillator(), gain = ctx.createGain();
+          const ctx = _audio.ctx;
+          if (!ctx || ctx.state === "closed") return;
+          if (ctx.state === "suspended") ctx.resume();
+          const osc = ctx.createOscillator(), gain = ctx.createGain();
           osc.connect(gain); gain.connect(ctx.destination);
           osc.frequency.value = freq; osc.type = "sine";
           gain.gain.setValueAtTime(vol, ctx.currentTime);
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
           osc.start(ctx.currentTime); osc.stop(ctx.currentTime + dur);
         } catch (e) {}
-      }, [getCtx]);
+      }, []);
       return {
         playTransition: useCallback(() => beep(520, 0.15, 0.25), [beep]),
         playSideSwitch: useCallback(() => { beep(580, 0.1, 0.25); setTimeout(() => beep(700, 0.1, 0.25), 150); }, [beep]),
@@ -160,7 +179,7 @@
     function FlowCard({ flow, onStart }) {
       const totalTime = calcTotalTime(flow);
       return (
-        <button onClick={() => onStart(flow)} style={{
+        <button onClick={() => { unlockAudio(); onStart(flow); }} style={{
           background: "var(--card-bg)", border: "1px solid var(--border)",
           borderRadius: 16, padding: "24px 20px", textAlign: "left", cursor: "pointer",
           width: "100%", transition: "all 0.2s ease", display: "flex", flexDirection: "column", gap: 6,
@@ -271,7 +290,7 @@
           </div>
           <div style={{ marginTop: "auto", paddingTop: 32, paddingBottom: 24, display: "flex", gap: 16 }}>
             <button onClick={() => { if (stepIndex > 0) { setStepIndex(stepIndex - 1); setTimeLeft(steps[stepIndex - 1].duration); } }} style={{ width: 52, height: 52, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text-secondary)", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u23ee"}</button>
-            <button onClick={() => setPaused(!paused)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", background: "var(--accent)", color: "#000", fontSize: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{paused ? "\u25b6" : "\u23f8"}</button>
+            <button onClick={() => { unlockAudio(); setPaused(!paused); }} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", background: "var(--accent)", color: "#000", fontSize: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{paused ? "\u25b6" : "\u23f8"}</button>
             <button onClick={() => { if (stepIndex < steps.length - 1) { let n = stepIndex + 1; if (steps[n] && (steps[n].type === "transition" || steps[n].type === "switch") && n + 1 < steps.length) n++; setStepIndex(n); setTimeLeft(steps[n].duration); } }} style={{ width: 52, height: 52, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text-secondary)", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u23ed"}</button>
           </div>
         </div>
