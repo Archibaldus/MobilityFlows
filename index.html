@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>MobilityFlows</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F9D8;</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0e0f11; --bg-transition: #111318; --card-bg: #16181d;
+      --border: #25282f; --track: #1e2028; --accent: #7ef29d;
+      --text-primary: #eef0f4; --text-secondary: #9399a6; --text-muted: #5c6270;
+      --font-display: 'DM Sans', sans-serif; --font-body: 'DM Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+    }
+    html, body, #root { height: 100%; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+    body { overflow-y: auto; overflow-x: hidden; }
+    button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ========== Exercise Library ==========
+    const exercises = {
+      "90/90 Hip Switch": { bilateral: false, cue: "Sit with both knees at 90°. Rotate hips to switch sides, keeping spine tall." },
+      "Pigeon Stretch": { bilateral: true, cue: "Front shin parallel to mat, back leg extended. Hinge forward from hips." },
+      "Deep Squat Hold": { bilateral: false, cue: "Feet shoulder-width, sink deep. Use elbows to press knees apart." },
+      "Couch Stretch": { bilateral: true, cue: "Rear foot elevated against wall, back knee down. Squeeze glute, drive hips forward." },
+      "Standing Calf Stretch": { bilateral: true, cue: "Wall press — straight back leg, heel grounded. Lean in to deepen." },
+      "Seated Hamstring Stretch": { bilateral: true, cue: "One leg extended, fold forward from hips. Keep spine long, reach for toes." },
+      "Thread the Needle": { bilateral: true, cue: "From all fours, slide one arm under your body. Let thoracic spine rotate fully." },
+      "Chest Opener Stretch": { bilateral: true, cue: "Arm against doorframe at 90°. Step through until chest stretch is felt." },
+      "Cross-Body Shoulder Stretch": { bilateral: true, cue: "Pull one arm across your chest with the opposite hand. Keep shoulder down." },
+      "Wrist Flexor & Extensor": { bilateral: false, cue: "On all fours, fingers forward then reversed. Gently rock to stretch wrists." },
+      "Cat-Cow": { bilateral: false, cue: "Alternate between arching and rounding spine. Breathe into each position." },
+      "Thoracic Rotation": { bilateral: true, cue: "Side-lying, knees stacked. Open top arm wide, follow with eyes. Breathe out." },
+      "Neck Side Stretch": { bilateral: true, cue: "Ear toward shoulder, gentle hand pressure. Opposite hand reaches for floor." },
+      "World's Greatest Stretch": { bilateral: true, cue: "Deep lunge, plant inside hand, rotate top arm to sky. Hold and breathe." },
+      "Shoulder CARs": { bilateral: true, cue: "Controlled articular rotation — full slow circle, max tension. Fist clenched." },
+      "Forward Fold": { bilateral: false, cue: "Feet hip-width, fold from hips. Grab elbows and let gravity pull you down." },
+      "Hip CARs": { bilateral: true, cue: "Standing on one leg, draw the largest circle possible with your knee. Slow and controlled, max tension." },
+      "Adductor Rock Back": { bilateral: false, cue: "Wide kneeling stance, rock hips back toward heels. Feel the inner thigh stretch deepen." },
+      "Half Kneeling Hip Flexor": { bilateral: true, cue: "Rear knee down, squeeze glute, tuck pelvis slightly. Reach same-side arm overhead to deepen." },
+      "Frog Stretch": { bilateral: false, cue: "On all fours, widen knees as far as comfortable. Rock hips back gently. Breathe and sink." },
+      "Supine Figure Four": { bilateral: true, cue: "On your back, cross ankle over opposite knee. Pull bottom thigh toward chest." },
+      "Prone Quad Stretch": { bilateral: true, cue: "Lying face down, pull one heel toward glute. Keep hips pressed into the floor." },
+      "Pancake Stretch": { bilateral: false, cue: "Seated, legs wide. Walk hands forward with a flat back. Breathe into the stretch." },
+      "Shin Box Lift-off": { bilateral: true, cue: "From 90/90 position, drive through front foot to lift hips. Squeeze glute at top." },
+      "Lat Stretch": { bilateral: true, cue: "Grab a doorframe or post overhead. Lean away and let the lat lengthen. Breathe deep." },
+      "Wall Slide": { bilateral: false, cue: "Back against wall. Arms in W position, slowly slide up to Y and back. Keep contact." },
+      "Puppy Pose": { bilateral: false, cue: "Knees on floor, walk hands forward. Chest melts toward ground, hips stay over knees." },
+      "Sphinx / Seal Stretch": { bilateral: false, cue: "Prone position, prop up on elbows (sphinx) or straight arms (seal). Relax glutes, breathe." },
+      "Prone Scorpion": { bilateral: true, cue: "Face down, arms out. Lift one leg and reach it across your body toward opposite hand. Control the rotation." },
+      "Standing Quad Pull": { bilateral: true, cue: "Standing, pull heel to glute. Push hips forward, keep knees aligned. Use wall for balance." },
+      "Bretzel Stretch": { bilateral: true, cue: "Side-lying, pin top knee down with bottom hand. Reach top arm behind to grab bottom ankle. Rotate and open." },
+      "Ankle CARs": { bilateral: true, cue: "Seated or standing, draw the largest circle with your foot. Full range, slow, controlled." },
+      "Neck CARs": { bilateral: false, cue: "Slow controlled circle with your head — chin to chest, ear to shoulder, look up, other ear. Max range." },
+      "Doorway Pec Stretch": { bilateral: false, cue: "Both arms on doorframe at 90°, step through. Vary arm height to target upper/lower pec fibers." },
+      "Sleeper Stretch": { bilateral: true, cue: "Side-lying on the target shoulder, arm at 90°. Gently push hand toward floor with opposite hand." },
+      "Child's Pose": { bilateral: false, cue: "Knees wide, sit back on heels, walk hands forward. Forehead to floor. Breathe into your back." },
+      "Supine Spinal Twist": { bilateral: true, cue: "On your back, cross one knee over. Opposite arm extended. Let gravity do the work. Breathe." },
+      "Standing Toe Touch Progression": { bilateral: false, cue: "Feet together, slightly bend knees. Roll down vertebra by vertebra. Reach for toes, hang, breathe." },
+      "Bear Sit": { bilateral: false, cue: "From bear crawl position, push hips back toward heels while keeping hands planted. Flat back." },
+      "Wall Hip Flexor Stretch": { bilateral: true, cue: "Face away from wall, one foot up the wall behind you, opposite foot forward in lunge. Sink in." }
+    };
+
+    // ========== All Flows ==========
+    const flows = [
+      { id: "lower_quick", name: "Lower Body — Quick", icon: "🦵", description: "Hips, hamstrings, quads, calves — efficient session", targetMinutes: 12, exercises: [{ name: "90/90 Hip Switch", duration: 60 }, { name: "Pigeon Stretch", duration: 60 }, { name: "Deep Squat Hold", duration: 60 }, { name: "Couch Stretch", duration: 60 }, { name: "Standing Calf Stretch", duration: 60 }, { name: "Seated Hamstring Stretch", duration: 60 }] },
+      { id: "lower_deep", name: "Lower Body — Deep", icon: "🦵", description: "Extended holds for hips, hamstrings, and ankles", targetMinutes: 18, exercises: [{ name: "Hip CARs", duration: 60 }, { name: "90/90 Hip Switch", duration: 90 }, { name: "Shin Box Lift-off", duration: 60 }, { name: "Pigeon Stretch", duration: 90 }, { name: "Couch Stretch", duration: 90 }, { name: "Seated Hamstring Stretch", duration: 90 }, { name: "Standing Calf Stretch", duration: 60 }, { name: "Deep Squat Hold", duration: 120 }] },
+      { id: "lower_extended", name: "Lower Body — Extended", icon: "🦵", description: "30-min deep dive into every lower body joint", targetMinutes: 30, exercises: [{ name: "Hip CARs", duration: 60 }, { name: "Ankle CARs", duration: 45 }, { name: "90/90 Hip Switch", duration: 90 }, { name: "Shin Box Lift-off", duration: 60 }, { name: "Pigeon Stretch", duration: 120 }, { name: "Supine Figure Four", duration: 90 }, { name: "Half Kneeling Hip Flexor", duration: 90 }, { name: "Prone Quad Stretch", duration: 90 }, { name: "Frog Stretch", duration: 120 }, { name: "Pancake Stretch", duration: 120 }, { name: "Seated Hamstring Stretch", duration: 90 }, { name: "Deep Squat Hold", duration: 120 }, { name: "Standing Calf Stretch", duration: 60 }] },
+      { id: "upper_quick", name: "Upper Body — Quick", icon: "💪", description: "Shoulders, thoracic spine, wrists, neck", targetMinutes: 12, exercises: [{ name: "Thread the Needle", duration: 60 }, { name: "Chest Opener Stretch", duration: 60 }, { name: "Cross-Body Shoulder Stretch", duration: 60 }, { name: "Wrist Flexor & Extensor", duration: 60 }, { name: "Cat-Cow", duration: 60 }, { name: "Thoracic Rotation", duration: 60 }, { name: "Neck Side Stretch", duration: 60 }] },
+      { id: "upper_deep", name: "Upper Body — Deep", icon: "💪", description: "Extended thoracic, shoulder, and chest work", targetMinutes: 18, exercises: [{ name: "Neck CARs", duration: 60 }, { name: "Shoulder CARs", duration: 60 }, { name: "Cat-Cow", duration: 60 }, { name: "Thread the Needle", duration: 90 }, { name: "Puppy Pose", duration: 90 }, { name: "Lat Stretch", duration: 60 }, { name: "Doorway Pec Stretch", duration: 90 }, { name: "Sleeper Stretch", duration: 60 }, { name: "Wall Slide", duration: 60 }, { name: "Neck Side Stretch", duration: 60 }] },
+      { id: "full_quick", name: "Full Body — Quick", icon: "🧘", description: "Head-to-toe mobility in ~12 minutes", targetMinutes: 12, exercises: [{ name: "World's Greatest Stretch", duration: 60 }, { name: "90/90 Hip Switch", duration: 60 }, { name: "Thoracic Rotation", duration: 60 }, { name: "Deep Squat Hold", duration: 60 }, { name: "Shoulder CARs", duration: 60 }, { name: "Forward Fold", duration: 60 }, { name: "Pigeon Stretch", duration: 60 }] },
+      { id: "full_deep", name: "Full Body — Deep", icon: "🧘", description: "Thorough head-to-toe session with longer holds", targetMinutes: 18, exercises: [{ name: "Cat-Cow", duration: 60 }, { name: "World's Greatest Stretch", duration: 90 }, { name: "90/90 Hip Switch", duration: 90 }, { name: "Pigeon Stretch", duration: 90 }, { name: "Deep Squat Hold", duration: 90 }, { name: "Bretzel Stretch", duration: 90 }, { name: "Shoulder CARs", duration: 60 }, { name: "Thread the Needle", duration: 60 }, { name: "Forward Fold", duration: 90 }] },
+      { id: "full_extended", name: "Full Body — Extended", icon: "🧘", description: "30-min comprehensive mobility session", targetMinutes: 30, exercises: [{ name: "Cat-Cow", duration: 60 }, { name: "Neck CARs", duration: 60 }, { name: "Shoulder CARs", duration: 60 }, { name: "World's Greatest Stretch", duration: 90 }, { name: "Thread the Needle", duration: 90 }, { name: "Puppy Pose", duration: 90 }, { name: "Hip CARs", duration: 60 }, { name: "90/90 Hip Switch", duration: 90 }, { name: "Pigeon Stretch", duration: 120 }, { name: "Half Kneeling Hip Flexor", duration: 90 }, { name: "Frog Stretch", duration: 120 }, { name: "Deep Squat Hold", duration: 120 }, { name: "Forward Fold", duration: 90 }, { name: "Child's Pose", duration: 120 }] },
+      { id: "hip_focus", name: "Hip Opener", icon: "🔓", description: "Deep hip work — flexors, rotators, adductors", targetMinutes: 18, exercises: [{ name: "Hip CARs", duration: 60 }, { name: "90/90 Hip Switch", duration: 90 }, { name: "Shin Box Lift-off", duration: 60 }, { name: "Pigeon Stretch", duration: 120 }, { name: "Supine Figure Four", duration: 90 }, { name: "Half Kneeling Hip Flexor", duration: 90 }, { name: "Frog Stretch", duration: 120 }, { name: "Adductor Rock Back", duration: 90 }, { name: "Deep Squat Hold", duration: 90 }] },
+      { id: "desk_worker", name: "Desk Worker Reset", icon: "🖥️", description: "Undo sitting — open chest, hips, and thoracic spine", targetMinutes: 18, exercises: [{ name: "Cat-Cow", duration: 60 }, { name: "Neck CARs", duration: 60 }, { name: "Neck Side Stretch", duration: 60 }, { name: "Doorway Pec Stretch", duration: 90 }, { name: "Thoracic Rotation", duration: 90 }, { name: "Puppy Pose", duration: 90 }, { name: "Wall Slide", duration: 60 }, { name: "Half Kneeling Hip Flexor", duration: 90 }, { name: "Couch Stretch", duration: 90 }, { name: "Deep Squat Hold", duration: 90 }] },
+      { id: "runner", name: "Runner's Mobility", icon: "🏃", description: "Hips, ankles, calves, hamstrings — built for runners", targetMinutes: 18, exercises: [{ name: "Hip CARs", duration: 60 }, { name: "Ankle CARs", duration: 45 }, { name: "World's Greatest Stretch", duration: 90 }, { name: "Half Kneeling Hip Flexor", duration: 90 }, { name: "Standing Quad Pull", duration: 60 }, { name: "Seated Hamstring Stretch", duration: 90 }, { name: "Pigeon Stretch", duration: 90 }, { name: "Standing Calf Stretch", duration: 60 }, { name: "Deep Squat Hold", duration: 90 }, { name: "Standing Toe Touch Progression", duration: 60 }] },
+      { id: "morning", name: "Morning Wake-Up", icon: "☀️", description: "Gentle activation to start the day — spine, hips, shoulders", targetMinutes: 12, exercises: [{ name: "Cat-Cow", duration: 60 }, { name: "Child's Pose", duration: 60 }, { name: "World's Greatest Stretch", duration: 60 }, { name: "90/90 Hip Switch", duration: 60 }, { name: "Shoulder CARs", duration: 60 }, { name: "Deep Squat Hold", duration: 60 }, { name: "Forward Fold", duration: 60 }, { name: "Sphinx / Seal Stretch", duration: 60 }] },
+      { id: "wind_down", name: "Evening Wind-Down", icon: "🌙", description: "Slow, long holds — parasympathetic focus", targetMinutes: 18, exercises: [{ name: "Child's Pose", duration: 120 }, { name: "Supine Spinal Twist", duration: 90 }, { name: "Supine Figure Four", duration: 90 }, { name: "Pigeon Stretch", duration: 120 }, { name: "Seated Hamstring Stretch", duration: 90 }, { name: "Pancake Stretch", duration: 120 }, { name: "Forward Fold", duration: 90 }, { name: "Neck Side Stretch", duration: 60 }] },
+      { id: "pre_workout", name: "Pre-Workout Primer", icon: "⚡", description: "Dynamic movement prep — CARs and active stretches", targetMinutes: 10, exercises: [{ name: "Cat-Cow", duration: 45 }, { name: "Hip CARs", duration: 45 }, { name: "Shoulder CARs", duration: 45 }, { name: "World's Greatest Stretch", duration: 45 }, { name: "Adductor Rock Back", duration: 45 }, { name: "Deep Squat Hold", duration: 45 }, { name: "Wall Slide", duration: 45 }, { name: "Ankle CARs", duration: 45 }] },
+      { id: "thoracic_focus", name: "Thoracic Spine Focus", icon: "🔄", description: "Open up the mid-back — rotation, extension, flexion", targetMinutes: 18, exercises: [{ name: "Cat-Cow", duration: 60 }, { name: "Thread the Needle", duration: 90 }, { name: "Thoracic Rotation", duration: 90 }, { name: "Puppy Pose", duration: 90 }, { name: "Sphinx / Seal Stretch", duration: 90 }, { name: "Prone Scorpion", duration: 60 }, { name: "Bretzel Stretch", duration: 90 }, { name: "Wall Slide", duration: 60 }, { name: "Supine Spinal Twist", duration: 90 }] }
+    ];
+
+    const TRANSITION_DURATION = 5;
+
+    const flowGroups = [
+      { label: "Lower Body", ids: ["lower_quick", "lower_deep", "lower_extended"] },
+      { label: "Upper Body", ids: ["upper_quick", "upper_deep"] },
+      { label: "Full Body", ids: ["full_quick", "full_deep", "full_extended"] },
+      { label: "Specialty", ids: ["hip_focus", "desk_worker", "runner", "thoracic_focus", "morning", "wind_down", "pre_workout"] },
+    ];
+
+    // ========== Audio ==========
+    function useAudio() {
+      const ctxRef = useRef(null);
+      const getCtx = useCallback(() => {
+        if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctxRef.current.state === "suspended") ctxRef.current.resume();
+        return ctxRef.current;
+      }, []);
+      const beep = useCallback((freq = 660, dur = 0.12, vol = 0.3) => {
+        try {
+          const ctx = getCtx(), osc = ctx.createOscillator(), gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = freq; osc.type = "sine";
+          gain.gain.setValueAtTime(vol, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + dur);
+        } catch (e) {}
+      }, [getCtx]);
+      return {
+        playTransition: useCallback(() => beep(520, 0.15, 0.25), [beep]),
+        playSideSwitch: useCallback(() => { beep(580, 0.1, 0.25); setTimeout(() => beep(700, 0.1, 0.25), 150); }, [beep]),
+        playDone: useCallback(() => { beep(523, 0.15, 0.3); setTimeout(() => beep(659, 0.15, 0.3), 180); setTimeout(() => beep(784, 0.2, 0.3), 360); }, [beep]),
+        playCountdownTick: useCallback(() => beep(440, 0.06, 0.15), [beep]),
+      };
+    }
+
+    // ========== Utility ==========
+    function calcTotalTime(flow) {
+      return flow.exercises.reduce((sum, item) => {
+        const ex = exercises[item.name];
+        return sum + (ex.bilateral ? item.duration * 2 : item.duration) + TRANSITION_DURATION;
+      }, -TRANSITION_DURATION);
+    }
+
+    function formatTime(s) {
+      return Math.floor(s / 60) + ":" + (s % 60).toString().padStart(2, "0");
+    }
+
+    function buildSteps(flow) {
+      const steps = [];
+      flow.exercises.forEach((item, i) => {
+        const ex = exercises[item.name];
+        if (ex.bilateral) {
+          steps.push({ type: "exercise", name: item.name, side: "Left", duration: item.duration, cue: ex.cue, exIndex: i });
+          steps.push({ type: "switch", name: item.name, duration: TRANSITION_DURATION, exIndex: i });
+          steps.push({ type: "exercise", name: item.name, side: "Right", duration: item.duration, cue: ex.cue, exIndex: i });
+        } else {
+          steps.push({ type: "exercise", name: item.name, side: null, duration: item.duration, cue: ex.cue, exIndex: i });
+        }
+        if (i < flow.exercises.length - 1) {
+          steps.push({ type: "transition", name: flow.exercises[i + 1].name, duration: TRANSITION_DURATION, exIndex: i + 1 });
+        }
+      });
+      return steps;
+    }
+
+    // ========== Components ==========
+    function FlowCard({ flow, onStart }) {
+      const totalTime = calcTotalTime(flow);
+      return (
+        <button onClick={() => onStart(flow)} style={{
+          background: "var(--card-bg)", border: "1px solid var(--border)",
+          borderRadius: 16, padding: "24px 20px", textAlign: "left", cursor: "pointer",
+          width: "100%", transition: "all 0.2s ease", display: "flex", flexDirection: "column", gap: 6,
+        }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.transform = "translateY(0)"; }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 28 }}>{flow.icon}</span>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>{flow.name}</div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.4, marginTop: 2 }}>{flow.description}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "var(--text-muted)", paddingLeft: 40 }}>
+            <span>{flow.exercises.length} exercises</span>
+            <span>{"\u00b7"}</span>
+            <span>~{flow.targetMinutes} min</span>
+            <span>{"\u00b7"}</span>
+            <span>{formatTime(totalTime)}</span>
+          </div>
+        </button>
+      );
+    }
+
+    function CircularProgress({ timeLeft, totalTime, size = 260, strokeWidth = 6 }) {
+      const r = (size - strokeWidth) / 2, c = 2 * Math.PI * r;
+      const progress = totalTime > 0 ? (totalTime - timeLeft) / totalTime : 0;
+      return (
+        <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+          <circle cx={size/2} cy={size/2} r={r} stroke="var(--track)" strokeWidth={strokeWidth} fill="none" />
+          <circle cx={size/2} cy={size/2} r={r} stroke="var(--accent)" strokeWidth={strokeWidth} fill="none"
+            strokeDasharray={c} strokeDashoffset={c * (1 - progress)} strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 0.3s linear" }} />
+        </svg>
+      );
+    }
+
+    function TimerView({ flow, onBack }) {
+      const steps = useRef(buildSteps(flow)).current;
+      const [stepIndex, setStepIndex] = useState(0);
+      const [timeLeft, setTimeLeft] = useState(steps[0].duration);
+      const [paused, setPaused] = useState(false);
+      const [finished, setFinished] = useState(false);
+      const audio = useAudio();
+      const step = steps[stepIndex];
+      const totalFlowTime = steps.reduce((s, st) => s + st.duration, 0);
+      const elapsedBefore = steps.slice(0, stepIndex).reduce((s, st) => s + st.duration, 0);
+      const overallElapsed = elapsedBefore + (step.duration - timeLeft);
+
+      useEffect(() => {
+        if (paused || finished) return;
+        if (timeLeft <= 0) {
+          if (stepIndex < steps.length - 1) {
+            const ns = steps[stepIndex + 1];
+            if (ns.type === "switch") audio.playSideSwitch();
+            else if (ns.type === "transition") audio.playTransition();
+            else if (step.type === "transition" || step.type === "switch") audio.playTransition();
+            setStepIndex(stepIndex + 1);
+            setTimeLeft(steps[stepIndex + 1].duration);
+          } else { audio.playDone(); setFinished(true); }
+          return;
+        }
+        const id = setInterval(() => {
+          setTimeLeft(t => { const n = t - 1; if (n <= 3 && n > 0) audio.playCountdownTick(); return n; });
+        }, 1000);
+        return () => clearInterval(id);
+      }, [timeLeft, paused, finished, stepIndex]);
+
+      useEffect(() => {
+        let wl = null;
+        (async () => { try { if ("wakeLock" in navigator) wl = await navigator.wakeLock.request("screen"); } catch(e){} })();
+        return () => { if (wl) wl.release(); };
+      }, []);
+
+      if (finished) return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 24, padding: 24 }}>
+          <div style={{ fontSize: 56 }}>{"\u2705"}</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--font-display)" }}>Flow Complete</div>
+          <div style={{ fontSize: 16, color: "var(--text-secondary)" }}>{flow.name} {"\u00b7"} {formatTime(totalFlowTime)}</div>
+          <button onClick={onBack} style={{ marginTop: 16, padding: "14px 36px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 12, fontSize: 16, fontWeight: 600, cursor: "pointer" }}>Back to Flows</button>
+        </div>
+      );
+
+      const isT = step.type === "transition", isS = step.type === "switch", isP = isT || isS;
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: "100vh", padding: "24px 20px", background: isP ? "var(--bg-transition)" : "transparent", transition: "background 0.4s ease" }}>
+          <div style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, cursor: "pointer", padding: "8px 0" }}>{"\u2190"} Exit</button>
+            <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{step.exIndex + 1}/{flow.exercises.length}</span>
+          </div>
+          <div style={{ width: "100%", maxWidth: 440, height: 3, background: "var(--track)", borderRadius: 2, marginBottom: 32, overflow: "hidden" }}>
+            <div style={{ height: "100%", background: "var(--accent)", borderRadius: 2, width: (overallElapsed / totalFlowTime) * 100 + "%", transition: "width 1s linear" }} />
+          </div>
+          <div style={{ position: "relative", marginBottom: 32 }}>
+            <CircularProgress timeLeft={timeLeft} totalTime={step.duration} />
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ fontSize: 56, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: -2 }}>{timeLeft}</div>
+              {isP && <div style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5 }}>{isS ? "Switch Sides" : "Get Ready"}</div>}
+            </div>
+          </div>
+          <div style={{ textAlign: "center", maxWidth: 380, display: "flex", flexDirection: "column", gap: 10 }}>
+            {isP && <div style={{ fontSize: 13, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>{isS ? "Next" : "Up Next"}</div>}
+            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--font-display)" }}>{step.name}</div>
+            {step.side && !isS && <div style={{ display: "inline-block", alignSelf: "center", padding: "4px 16px", borderRadius: 20, background: step.side === "Left" ? "rgba(99,182,255,0.12)" : "rgba(255,170,99,0.12)", color: step.side === "Left" ? "#63b6ff" : "#ffaa63", fontSize: 14, fontWeight: 600 }}>{step.side} Side</div>}
+            {isS && <div style={{ display: "inline-block", alignSelf: "center", padding: "4px 16px", borderRadius: 20, background: "rgba(255,170,99,0.12)", color: "#ffaa63", fontSize: 14, fontWeight: 600 }}>Right Side</div>}
+            {!isP && step.cue && <div style={{ fontSize: 15, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 4 }}>{step.cue}</div>}
+          </div>
+          <div style={{ marginTop: "auto", paddingTop: 32, paddingBottom: 24, display: "flex", gap: 16 }}>
+            <button onClick={() => { if (stepIndex > 0) { setStepIndex(stepIndex - 1); setTimeLeft(steps[stepIndex - 1].duration); } }} style={{ width: 52, height: 52, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text-secondary)", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u23ee"}</button>
+            <button onClick={() => setPaused(!paused)} style={{ width: 72, height: 72, borderRadius: "50%", border: "none", background: "var(--accent)", color: "#000", fontSize: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{paused ? "\u25b6" : "\u23f8"}</button>
+            <button onClick={() => { if (stepIndex < steps.length - 1) { let n = stepIndex + 1; if (steps[n] && (steps[n].type === "transition" || steps[n].type === "switch") && n + 1 < steps.length) n++; setStepIndex(n); setTimeLeft(steps[n].duration); } }} style={{ width: 52, height: 52, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text-secondary)", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u23ed"}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== App ==========
+    function MobilityApp() {
+      const [activeFlow, setActiveFlow] = useState(null);
+      const [filter, setFilter] = useState("all");
+
+      if (activeFlow) return <TimerView flow={activeFlow} onBack={() => setActiveFlow(null)} />;
+
+      const fg = filter === "all" ? flowGroups : flowGroups.filter(g => g.label.toLowerCase().includes(filter));
+
+      return (
+        <div style={{ maxWidth: 520, margin: "0 auto", padding: "48px 20px 80px" }}>
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 }}>MobilityFlows</div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, margin: 0, fontFamily: "var(--font-display)", lineHeight: 1.2 }}>Choose a Flow</h1>
+            <p style={{ fontSize: 15, color: "var(--text-secondary)", marginTop: 8 }}>{flows.length} flows {"\u00b7"} {Object.keys(exercises).length} exercises {"\u00b7"} 10{"\u2013"}30 min</p>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
+            {["all", "lower", "upper", "full", "specialty"].map(f => (
+              <button key={f} onClick={() => setFilter(f)} style={{
+                padding: "6px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                border: filter === f ? "1px solid var(--accent)" : "1px solid var(--border)",
+                background: filter === f ? "rgba(126,242,157,0.1)" : "var(--card-bg)",
+                color: filter === f ? "var(--accent)" : "var(--text-secondary)",
+                transition: "all 0.15s ease", textTransform: "capitalize",
+              }}>{f}</button>
+            ))}
+          </div>
+          {fg.map(group => (
+            <div key={group.label} style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12, paddingLeft: 4 }}>{group.label}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {group.ids.map(id => { const f = flows.find(fl => fl.id === id); return f ? <FlowCard key={f.id} flow={f} onStart={setActiveFlow} /> : null; })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<MobilityApp />);
+  </script>
+</body>
+</html>
