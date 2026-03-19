@@ -103,59 +103,90 @@
       { label: "Specialty", ids: ["hip_focus", "desk_worker", "runner", "thoracic_focus", "morning", "wind_down", "pre_workout"] },
     ];
 
-    // ========== Audio (iOS standalone / home-screen compatible) ==========
-    // iOS standalone mode re-suspends the AudioContext aggressively.
-    // We must: (a) re-play a silent buffer on every touch, not just once,
-    // (b) listen globally for touchstart, (c) re-resume on visibilitychange.
-    const _audio = { ctx: null };
+    // ========== Audio (HTML5 Audio — no WebAudio API, fully iOS compatible) ==========
+    // Instead of AudioContext + OscillatorNode (which iOS blocks aggressively),
+    // we generate WAV files in-memory and play them via <audio> elements.
 
-    function unlockAudio() {
-      try {
-        if (!_audio.ctx) {
-          _audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // -- WAV generator --
+    function _wavStr(v,o,s){for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))}
+    function _makeWav(samples,sr){
+      const n=samples.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+      _wavStr(v,0,'RIFF');v.setUint32(4,36+n*2,true);_wavStr(v,8,'WAVE');
+      _wavStr(v,12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);
+      v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);
+      v.setUint16(32,2,true);v.setUint16(34,16,true);
+      _wavStr(v,36,'data');v.setUint32(40,n*2,true);
+      for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.max(-1,Math.min(1,samples[i]))*32767|0,true);
+      return new Blob([buf],{type:'audio/wav'});
+    }
+    function _tone(freq,dur,vol,sr){
+      const n=sr*dur|0,o=new Float32Array(n);
+      for(let i=0;i<n;i++){
+        const env=Math.min(1,Math.min(i/(sr*0.005),(n-i)/(sr*0.02)));
+        o[i]=Math.sin(2*Math.PI*freq*i/sr)*vol*env;
+      }return o;
+    }
+    function _silent(dur,sr){return new Float32Array(sr*dur|0)}
+    function _cat(){let l=0;for(const a of arguments)l+=a.length;const o=new Float32Array(l);let p=0;for(const a of arguments){o.set(a,p);p+=a.length;}return o;}
+
+    // -- Pre-build all sounds as blob URLs (runs once at page load) --
+    const _SR=44100;
+    const _sndUrl={
+      transition:URL.createObjectURL(_makeWav(_tone(520,0.15,0.25,_SR),_SR)),
+      sideSwitch:URL.createObjectURL(_makeWav(_cat(_tone(580,0.1,0.25,_SR),_silent(0.05,_SR),_tone(700,0.1,0.25,_SR)),_SR)),
+      done:URL.createObjectURL(_makeWav(_cat(_tone(523,0.15,0.3,_SR),_silent(0.03,_SR),_tone(659,0.15,0.3,_SR),_silent(0.03,_SR),_tone(784,0.2,0.3,_SR)),_SR)),
+      tick:URL.createObjectURL(_makeWav(_tone(440,0.06,0.15,_SR),_SR)),
+      silent:URL.createObjectURL(_makeWav(_silent(0.05,_SR),_SR)),
+    };
+
+    // -- One <audio> element per sound type (reused for playback) --
+    const _snd={};
+    for(const k in _sndUrl){const a=new Audio();a.src=_sndUrl[k];a.preload='auto';a.load();_snd[k]=a;}
+
+    // -- Unlock: on first user gesture, play every element so iOS registers them --
+    let _audioFirstTouch=true;
+    function unlockAudio(){
+      try{
+        if(_audioFirstTouch){
+          _audioFirstTouch=false;
+          for(const k in _snd){
+            const a=_snd[k]; a.volume=0.01;
+            const p=a.play();
+            if(p)p.then(()=>{a.pause();a.currentTime=0;a.volume=1;}).catch(()=>{});
+          }
         }
-        const ctx = _audio.ctx;
-        // Always resume — iOS standalone can re-suspend at any time
-        if (ctx.state === "suspended") ctx.resume();
-        // Always play silent buffer during user gesture — this is what iOS keys on
-        const buf = ctx.createBuffer(1, 1, 22050);
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.connect(ctx.destination);
-        src.start(0);
-      } catch (e) {}
+        // Always play silent element to keep audio session alive (iOS standalone)
+        const s=_snd.silent; s.currentTime=0; s.volume=0.01;
+        const p=s.play(); if(p)p.then(()=>{s.volume=1;}).catch(()=>{});
+      }catch(e){}
     }
 
-    // Global touch listener — every tap is a chance to keep audio alive
-    document.addEventListener("touchstart", unlockAudio, true);
-    document.addEventListener("touchend", unlockAudio, true);
+    function _playSound(key){
+      try{
+        const a=_snd[key]; if(!a)return;
+        a.currentTime=0; a.volume=1;
+        const p=a.play(); if(p&&p.catch)p.catch(()=>{});
+      }catch(e){}
+    }
 
-    // When app returns from background / lock screen, re-resume
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && _audio.ctx) {
-        if (_audio.ctx.state === "suspended") _audio.ctx.resume();
+    // -- Global listeners: every touch/click is a chance to keep audio alive --
+    document.addEventListener("touchstart",unlockAudio,{capture:true,passive:true});
+    document.addEventListener("touchend",unlockAudio,{capture:true,passive:true});
+    document.addEventListener("click",unlockAudio,{capture:true,passive:true});
+
+    // When returning from background/lock-screen, reload all audio elements
+    document.addEventListener("visibilitychange",()=>{
+      if(document.visibilityState==="visible"){
+        for(const k in _snd){try{_snd[k].load();}catch(e){}}
       }
     });
 
-    function useAudio() {
-      const beep = useCallback((freq = 660, dur = 0.12, vol = 0.3) => {
-        try {
-          const ctx = _audio.ctx;
-          if (!ctx || ctx.state === "closed") return;
-          if (ctx.state === "suspended") ctx.resume();
-          const osc = ctx.createOscillator(), gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.frequency.value = freq; osc.type = "sine";
-          gain.gain.setValueAtTime(vol, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + dur);
-        } catch (e) {}
-      }, []);
-      return {
-        playTransition: useCallback(() => beep(520, 0.15, 0.25), [beep]),
-        playSideSwitch: useCallback(() => { beep(580, 0.1, 0.25); setTimeout(() => beep(700, 0.1, 0.25), 150); }, [beep]),
-        playDone: useCallback(() => { beep(523, 0.15, 0.3); setTimeout(() => beep(659, 0.15, 0.3), 180); setTimeout(() => beep(784, 0.2, 0.3), 360); }, [beep]),
-        playCountdownTick: useCallback(() => beep(440, 0.06, 0.15), [beep]),
+    function useAudio(){
+      return{
+        playTransition:useCallback(()=>_playSound('transition'),[]),
+        playSideSwitch:useCallback(()=>_playSound('sideSwitch'),[]),
+        playDone:useCallback(()=>_playSound('done'),[]),
+        playCountdownTick:useCallback(()=>_playSound('tick'),[]),
       };
     }
 
