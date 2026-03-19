@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0e0f11" />
   <title>MobilityFlows</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F9D8;</text></svg>" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -100,9 +103,11 @@
       { label: "Specialty", ids: ["hip_focus", "desk_worker", "runner", "thoracic_focus", "morning", "wind_down", "pre_workout"] },
     ];
 
-    // ========== Audio (iOS Safari compatible) ==========
-    // Singleton AudioContext — must be unlocked during a user gesture (tap)
-    const _audio = { ctx: null, unlocked: false };
+    // ========== Audio (iOS standalone / home-screen compatible) ==========
+    // iOS standalone mode re-suspends the AudioContext aggressively.
+    // We must: (a) re-play a silent buffer on every touch, not just once,
+    // (b) listen globally for touchstart, (c) re-resume on visibilitychange.
+    const _audio = { ctx: null };
 
     function unlockAudio() {
       try {
@@ -110,18 +115,27 @@
           _audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
         }
         const ctx = _audio.ctx;
+        // Always resume — iOS standalone can re-suspend at any time
         if (ctx.state === "suspended") ctx.resume();
-        if (!_audio.unlocked) {
-          // iOS requires playing a silent buffer during a user gesture to fully unlock
-          const buf = ctx.createBuffer(1, 1, 22050);
-          const src = ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(ctx.destination);
-          src.start(0);
-          _audio.unlocked = true;
-        }
+        // Always play silent buffer during user gesture — this is what iOS keys on
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
       } catch (e) {}
     }
+
+    // Global touch listener — every tap is a chance to keep audio alive
+    document.addEventListener("touchstart", unlockAudio, true);
+    document.addEventListener("touchend", unlockAudio, true);
+
+    // When app returns from background / lock screen, re-resume
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && _audio.ctx) {
+        if (_audio.ctx.state === "suspended") _audio.ctx.resume();
+      }
+    });
 
     function useAudio() {
       const beep = useCallback((freq = 660, dur = 0.12, vol = 0.3) => {
@@ -179,7 +193,7 @@
     function FlowCard({ flow, onStart }) {
       const totalTime = calcTotalTime(flow);
       return (
-        <button onClick={() => { unlockAudio(); onStart(flow); }} style={{
+        <button onClick={() => onStart(flow)} style={{
           background: "var(--card-bg)", border: "1px solid var(--border)",
           borderRadius: 16, padding: "24px 20px", textAlign: "left", cursor: "pointer",
           width: "100%", transition: "all 0.2s ease", display: "flex", flexDirection: "column", gap: 6,
@@ -215,6 +229,97 @@
             strokeDasharray={c} strokeDashoffset={c * (1 - progress)} strokeLinecap="round"
             style={{ transition: "stroke-dashoffset 0.3s linear" }} />
         </svg>
+      );
+    }
+
+    function FlowPreview({ flow, onStart, onBack }) {
+      const totalTime = calcTotalTime(flow);
+      return (
+        <div style={{ maxWidth: 520, margin: "0 auto", padding: "48px 20px 80px" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+            <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, cursor: "pointer", padding: "8px 0" }}>{"\u2190"} Back</button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 8 }}>
+            <span style={{ fontSize: 36 }}>{flow.icon}</span>
+            <div>
+              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--font-display)" }}>{flow.name}</div>
+              <div style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: 2 }}>{flow.description}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 16, fontSize: 13, color: "var(--text-muted)", marginBottom: 28 }}>
+            <span>{flow.exercises.length} exercises</span>
+            <span>{"\u00b7"}</span>
+            <span>~{flow.targetMinutes} min</span>
+            <span>{"\u00b7"}</span>
+            <span>{formatTime(totalTime)}</span>
+          </div>
+
+          {/* Exercise list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, background: "var(--border)", borderRadius: 12, overflow: "hidden", marginBottom: 32 }}>
+            {flow.exercises.map((item, i) => {
+              const ex = exercises[item.name];
+              const perSide = ex.bilateral ? item.duration + "s \u00d7 2" : item.duration + "s";
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "var(--card-bg)" }}>
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-muted)", minWidth: 22, textAlign: "right" }}>{i + 1}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>{item.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{ex.cue}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{perSide}</div>
+                    {ex.bilateral && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>bilateral</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Start button */}
+          <button onClick={() => { unlockAudio(); onStart(); }} style={{
+            width: "100%", padding: "16px 0", background: "var(--accent)", color: "#000",
+            border: "none", borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: "pointer",
+            fontFamily: "var(--font-body)", letterSpacing: 0.3,
+          }}>Start Flow</button>
+        </div>
+      );
+    }
+
+    const COUNTDOWN_DURATION = 10;
+
+    function CountdownView({ flow, onReady, onBack }) {
+      const [timeLeft, setTimeLeft] = useState(COUNTDOWN_DURATION);
+      const audio = useAudio();
+      const firstEx = flow.exercises[0];
+
+      useEffect(() => {
+        if (timeLeft <= 0) { audio.playTransition(); onReady(); return; }
+        const id = setInterval(() => {
+          setTimeLeft(t => { const n = t - 1; if (n <= 3 && n > 0) audio.playCountdownTick(); return n; });
+        }, 1000);
+        return () => clearInterval(id);
+      }, [timeLeft]);
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "24px 20px", background: "var(--bg-transition)" }}>
+          <button onClick={onBack} style={{ position: "absolute", top: 24, left: 20, background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, cursor: "pointer" }}>{"\u2190"} Cancel</button>
+          <div style={{ position: "relative", marginBottom: 32 }}>
+            <CircularProgress timeLeft={timeLeft} totalTime={COUNTDOWN_DURATION} />
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ fontSize: 64, fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: -2 }}>{timeLeft}</div>
+              <div style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5 }}>Get Ready</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 }}>First Up</div>
+            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "var(--font-display)" }}>{firstEx.name}</div>
+            {exercises[firstEx.name].bilateral && (
+              <div style={{ display: "inline-block", alignSelf: "center", padding: "4px 16px", borderRadius: 20, background: "rgba(99,182,255,0.12)", color: "#63b6ff", fontSize: 14, fontWeight: 600 }}>Left Side</div>
+            )}
+            <div style={{ fontSize: 15, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 4, maxWidth: 340 }}>{exercises[firstEx.name].cue}</div>
+          </div>
+        </div>
       );
     }
 
@@ -299,10 +404,15 @@
 
     // ========== App ==========
     function MobilityApp() {
-      const [activeFlow, setActiveFlow] = useState(null);
+      const [selectedFlow, setSelectedFlow] = useState(null);
+      const [screen, setScreen] = useState("home"); // home | preview | countdown | timer
       const [filter, setFilter] = useState("all");
 
-      if (activeFlow) return <TimerView flow={activeFlow} onBack={() => setActiveFlow(null)} />;
+      const goHome = () => { setSelectedFlow(null); setScreen("home"); };
+
+      if (screen === "preview" && selectedFlow) return <FlowPreview flow={selectedFlow} onBack={goHome} onStart={() => setScreen("countdown")} />;
+      if (screen === "countdown" && selectedFlow) return <CountdownView flow={selectedFlow} onBack={goHome} onReady={() => setScreen("timer")} />;
+      if (screen === "timer" && selectedFlow) return <TimerView flow={selectedFlow} onBack={goHome} />;
 
       const fg = filter === "all" ? flowGroups : flowGroups.filter(g => g.label.toLowerCase().includes(filter));
 
@@ -328,7 +438,7 @@
             <div key={group.label} style={{ marginBottom: 28 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12, paddingLeft: 4 }}>{group.label}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {group.ids.map(id => { const f = flows.find(fl => fl.id === id); return f ? <FlowCard key={f.id} flow={f} onStart={setActiveFlow} /> : null; })}
+                {group.ids.map(id => { const f = flows.find(fl => fl.id === id); return f ? <FlowCard key={f.id} flow={f} onStart={(fl) => { setSelectedFlow(fl); setScreen("preview"); }} /> : null; })}
               </div>
             </div>
           ))}
